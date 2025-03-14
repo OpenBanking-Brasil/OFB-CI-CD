@@ -1,0 +1,65 @@
+name: Update Tag on PR Merge
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: "Repository name"
+        required: true
+      branch:
+        description: "Branch name"
+        required: true
+      version:
+        description: "Swagger Version"
+        required: true
+      title:
+        description: "Swagger Title"
+        required: true
+      pr_number:
+        description: "Pull Request Number"
+        required: true
+
+jobs:
+  update-tag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Print received information
+        run: |
+          echo "Repository: ${{ inputs.repository }}"
+          echo "Branch: ${{ inputs.branch }}"
+          echo "Swagger Version: ${{ inputs.version }}"
+          echo "Swagger Title: ${{ inputs.title }}"
+          echo "Pull Request Number: ${{ inputs.pr_number }}"
+
+      - name: Get latest commit SHA from PR
+        id: get_pr_sha
+        run: |
+          PR_SHA=$(curl -s -H "Authorization: token ${{ secrets.REPO_ACCESS_TOKEN }}" \
+            "https://api.github.com/repos/${{ inputs.repository }}/pulls/${{ inputs.pr_number }}" | jq -r .merge_commit_sha)
+          echo "PR_SHA=$PR_SHA" >> $GITHUB_ENV
+          echo "Latest commit SHA from PR: $PR_SHA"
+
+      - name: Remove existing tag (if exists) via API
+        run: |
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE -H "Authorization: token ${{ secrets.REPO_ACCESS_TOKEN }}" \
+          "https://api.github.com/repos/${{ inputs.repository }}/git/refs/tags/${{ inputs.version }}")
+          if [ "$RESPONSE" == "204" ]; then
+            echo "Tag ${{ inputs.version }} removed successfully"
+          else
+            echo "No existing tag ${{ inputs.version }} to remove or failed request"
+          fi
+
+      - name: Create new tag via API
+        run: |
+          curl -X POST -H "Authorization: token ${{ secrets.REPO_ACCESS_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d "{\"ref\": \"refs/tags/${{ inputs.version }}\", \"sha\": \"$PR_SHA\"}" \
+          "https://api.github.com/repos/${{ inputs.repository }}/git/refs"
+
+      - name: Print tag link
+        run: |
+          echo "Tag created: https://github.com/${{ inputs.repository }}/releases/tag/${{ inputs.version }}"

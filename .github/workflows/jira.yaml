@@ -1,0 +1,140 @@
+name: Jira Task Creation
+
+on:
+  workflow_call:
+    secrets:
+      JIRA_URL:
+        required: true
+      JIRA_USER:
+        required: true
+      JIRA_API_TOKEN:
+        required: true
+      JIRA_PROJECT:
+        required: true
+    inputs:
+      PR_TITLE:
+        required: true
+        type: string
+      PR_URL:
+        required: true
+        type: string
+      PR_AUTHOR:
+        required: true
+        type: string
+permissions:
+  actions: write
+  contents: write  # Permite modificar arquivos no repositório
+  issues: write    # Permite criar e modificar issues
+  pull-requests: write  # Permite modificar PRs
+
+
+jobs:
+  jira:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validar Secrets Necessárias
+        run: |
+          if [[ -z "${{ secrets.JIRA_URL }}" || -z "${{ secrets.JIRA_USER }}" || -z "${{ secrets.JIRA_API_TOKEN }}" || -z "${{ secrets.JIRA_PROJECT }}" ]]; then
+            echo "❌ Uma ou mais secrets obrigatórias não estão definidas."
+            exit 1
+          fi
+          echo "✅ Todas as secrets obrigatórias estão definidas."
+
+      - name: Baixar Relatórios
+        uses: actions/download-artifact@v4
+        with:
+          path: reports
+
+      - name: Listar arquivos baixados
+        run: |
+          echo "📂 Arquivos baixados:"
+          ls -R reports
+
+      - name: Criar Task no Jira
+        id: create-jira-task
+        env:
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_USER: ${{ secrets.JIRA_USER }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT: ${{ secrets.JIRA_PROJECT }}
+          JIRA_ISSUE_TYPE: "Task"
+        run: |
+          DESCRIPTION="Revisão do PR: ${{ inputs.PR_TITLE }}. Link do PR: ${{ inputs.PR_URL }} Criado por: ${{ inputs.PR_AUTHOR }}"
+          ISSUE_PAYLOAD=$(jq -n \
+            --arg project "$JIRA_PROJECT" \
+            --arg summary "Revisão do PR: ${{ inputs.PR_TITLE }}" \
+            --arg description "$DESCRIPTION" \
+            --arg issuetype "$JIRA_ISSUE_TYPE" \
+            '{ fields: { project: { key: $project }, summary: $summary, description: $description, issuetype: { name: $issuetype } } }')
+
+          RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
+            -u "$JIRA_USER:$JIRA_API_TOKEN" \
+            --data "$ISSUE_PAYLOAD" "$JIRA_URL/rest/api/2/issue/")
+
+          ISSUE_ID=$(echo "$RESPONSE" | jq -r '.id')
+          ISSUE_KEY=$(echo "$RESPONSE" | jq -r '.key')
+
+          if [[ "$ISSUE_ID" == "null" || -z "$ISSUE_ID" ]]; then
+            echo "❌ Erro ao criar issue no Jira!"
+            exit 1
+          fi
+
+          echo "JIRA_ISSUE_ID=$ISSUE_ID" >> $GITHUB_ENV
+          echo "JIRA_ISSUE_KEY=$ISSUE_KEY" >> $GITHUB_ENV
+          echo "✅ Tarefa Jira criada: $ISSUE_KEY (ID: $ISSUE_ID)"
+          echo "::set-output name=JIRA_ISSUE_ID::$ISSUE_ID" 
+          
+      - name: Anexar Relatórios à Task do Jira
+        env:
+            JIRA_URL: ${{ secrets.JIRA_URL }}
+            JIRA_USER: ${{ secrets.JIRA_USER }}
+            JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: |
+            echo "🔍 Listando arquivos baixados antes do upload..."
+            ls -lah reports/ || echo "⚠️ Pasta 'reports/' não encontrada!"
+            ls -lah reports/spectral_report/ || echo "⚠️ Pasta 'spectral_report/' não encontrada!"
+            
+            JIRA_ISSUE_ID=${{ steps.create-jira-task.outputs.JIRA_ISSUE_ID }}
+            echo "📌 ID da Task do Jira: $JIRA_ISSUE_ID"
+        
+            echo "📂 Arquivos a serem anexados:"
+            ls -R reports/
+        
+            for FILE in reports/spectral_report/spectral_report.txt reports/vale_report/vale_report.txt reports/pb33f_report/pb33f_report.txt reports/report/report.html; do
+              if [[ -f "$FILE" ]]; then
+                echo "📎 Tentando anexar arquivo: $FILE"
+        
+                RESPONSE=$(curl -X POST -H "X-Atlassian-Token: no-check" \
+                  -H "Content-Type: multipart/form-data" \
+                  -u "$JIRA_USER:$JIRA_API_TOKEN" \
+                  -F "file=@$FILE" "$JIRA_URL/rest/api/2/issue/$JIRA_ISSUE_ID/attachments" \
+                  -w "\n\nHTTP_STATUS:%{http_code}")
+        
+                echo "📄 Resposta do Jira:"
+                echo "$RESPONSE"
+        
+                HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | awk -F':' '{print $2}')
+                if [[ "$HTTP_STATUS" -ne 200 && "$HTTP_STATUS" -ne 201 ]]; then
+                  echo "❌ Erro no upload do arquivo: $FILE"
+                  exit 1
+                fi
+              else
+                echo "⚠️ Arquivo não encontrado: $FILE"
+              fi
+            done
+        
+            echo "✅ Processo de anexação concluído."
+        
+
+      - name: Mudar status da Task para "Em Andamento"
+        env:
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_USER: ${{ secrets.JIRA_USER }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: |
+          TRANSITION_PAYLOAD='{"transition": {"id": "31"}}'
+          curl -s -X POST -H "Content-Type: application/json" \
+            -u "$JIRA_USER:$JIRA_API_TOKEN" \
+            --data "$TRANSITION_PAYLOAD" \
+            "$JIRA_URL/rest/api/2/issue/$JIRA_ISSUE_ID/transitions"
+          echo "✅ Status da Task atualizado para 'Em Andamento'."

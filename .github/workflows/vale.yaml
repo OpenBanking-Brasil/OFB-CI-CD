@@ -1,0 +1,39 @@
+name: Vale CLI Validation
+
+on:
+  workflow_call:
+
+jobs:
+  vale:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download swagger
+        uses: actions/download-artifact@v4
+        with:
+          name: swagger
+
+      - name: Listar arquivos baixados
+        run: |
+          echo "📂 Arquivos baixados:"
+          ls -R
+
+      - name: Instalar Vale CLI
+        run: |
+          VALE_VERSION=$(curl -s https://api.github.com/repos/errata-ai/vale/releases/latest | jq -r .tag_name)
+          curl -L -o vale.tar.gz "https://github.com/errata-ai/vale/releases/download/$VALE_VERSION/vale_${VALE_VERSION:1}_Linux_64-bit.tar.gz"
+          tar -xzf vale.tar.gz
+          sudo mv vale /usr/local/bin/
+
+      - name: Rodar Vale
+        run: |
+          vale --config=rules/.vale.ini sync
+          vale --config=rules/.vale.ini ./swagger.yaml --no-global 2>&1 | sed 's/\x1B\[[0-9;]*[mK]//g' > vale_report.txt || true          
+
+      - name: Upload Vale
+        uses: actions/upload-artifact@v4
+        with:
+          name: vale_report
+          path: vale_report.txt

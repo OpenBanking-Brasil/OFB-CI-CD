@@ -1,0 +1,33 @@
+name: Spectral Validation
+
+on:
+  workflow_call:
+
+jobs:
+  spectral:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download swagger
+        uses: actions/download-artifact@v4
+        with:
+          name: swagger
+
+      - name: Instalar Spectral
+        run: npm install -g @stoplight/spectral-cli
+
+      - name: Rodar Spectral
+        run: spectral lint swagger.yaml --ruleset rules/spectral_rules.yaml > spectral_report.txt 2>&1 || true
+
+      - name: Mostrar caminho do arquivo gerado
+        run: |
+          echo "Relatório gerado em: $(realpath spectral_report.txt)"
+      
+      - name: Upload spectral_report
+        uses: actions/upload-artifact@v4
+        with:
+          name: spectral_report
+          path: spectral_report.txt
+        

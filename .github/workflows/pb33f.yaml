@@ -1,0 +1,61 @@
+name: Validate PR with PB33F
+
+on:
+  workflow_call:
+
+jobs:
+  PB33F:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download swagger
+        uses: actions/download-artifact@v4
+        with:
+          name: swagger
+
+      - name: Download oldSwagger
+        uses: actions/download-artifact@v4
+        with:
+          name: oldSwagger
+
+      - name: Instalar Dependências do Go
+        run: |
+          go mod init validator || true
+          go mod tidy
+          go get github.com/pb33f/libopenapi
+
+      - name: Listar arquivos baixados
+        run: |
+          echo "📂 Arquivos baixados:"
+          ls -R
+
+      - name: Rodar PB33F e gerar relatório
+        run: |
+          go run rules/validator.go oldSwagger.yaml swagger.yaml > pb33f_report.txt 2>&1 || true
+
+      - name: Upload pb33f_report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pb33f_report
+          path: pb33f_report.txt      
+      
+      - name: Listar arquivos baixados
+        run: |
+          echo "📂 Arquivos baixados:"
+          ls -R
+
+      - name: Baixar o Open API Changes
+        run: |
+          curl -fsSL https://pb33f.io/openapi-changes/install.sh | sh
+
+      - name: Rodar o Open API Changes
+        run: |
+          openapi-changes html-report oldSwaggerResolve.yaml swaggerResolve.yaml
+
+      - name: Upload pb33f_report
+        uses: actions/upload-artifact@v4
+        with:
+          name: report
+          path: report.html
