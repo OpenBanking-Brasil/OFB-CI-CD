@@ -11,10 +11,6 @@ on:
         required: true
       JIRA_PROJECT:
         required: true
-      JIRA_ISSUE_TYPE:
-        required: true
-      JIRA_ISSUE_STATUS:
-        required: true
     inputs:
       PR_TITLE:
         required: true
@@ -60,7 +56,7 @@ jobs:
           JIRA_USER: ${{ secrets.JIRA_USER }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT: ${{ secrets.JIRA_PROJECT }}
-          JIRA_ISSUE_TYPE: ${{ secrets.JIRA_ISSUE_TYPE }}
+          JIRA_ISSUE_TYPE: "Proposta"
         run: |
           DESCRIPTION="Revisão do PR: ${{ inputs.PR_TITLE }}. Link do PR: ${{ inputs.PR_URL }} Criado por: ${{ inputs.PR_AUTHOR }}"
           ISSUE_PAYLOAD=$(jq -n \
