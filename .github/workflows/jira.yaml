@@ -11,6 +11,10 @@ on:
         required: true
       JIRA_PROJECT:
         required: true
+      JIRA_ISSUE_TYPE:
+        required: true
+      JIRA_ISSUE_STATUS:
+        required: true
     inputs:
       PR_TITLE:
         required: true
